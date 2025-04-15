@@ -3,112 +3,139 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct coord{
-    int x;
-    int y;
-}coord;
-
-
-
-char* myer_diff(char* A, char* B)
-{
-    
-    //An implementation of the Myers diff algorithm.
-    //See http://www.xmailserver.org/diff2.pdf
-    
-    
-    int y = 0;
-    int x = 0;
-    int a_max = strlen(A);
-    int b_max = strlen(B);
-    int go_down = 0;
-    int old_x = 0;
-    coord* coord = calloc(a_max + b_max, sizeof(coord));
-    char* final_str = malloc((a_max + b_max) * 4); // Allocate enough space for the result
-    if (!final_str) {
+// Function to add an operation to the list
+void add_operation(Operation** head, char type, const char* line) {
+    Operation* new_op = malloc(sizeof(Operation));
+    if (!new_op) {
         perror("malloc failed");
         exit(EXIT_FAILURE);
     }
-    final_str[0] = '\0'; 
-    for(int D = 0; D <= a_max + b_max; D++)
-    {
-        for(int k = -D; k <= D; k += 2)
-        {
-        
-            // This determines whether our next search point will be going down
-            // in the edit graph, or to the right.
-            //
-            // The intuition for this is that we should go down if we're on the
-            // left edge (k == -d) to make sure that the left edge is fully
-            // explored.
-            //
-            // If we aren't on the top (k != d), then only go down if going down
-            // would take us to territory that hasn't sufficiently been explored
-            // yet.
-            
-            go_down = (k == -D || (k != D && coord[k - 1].x < coord[k + 1].x));
+    new_op->type = type;
+    new_op->line = strdup(line); // Duplicate the line
+    if (!new_op->line) {
+        perror("strdup failed");
+        exit(EXIT_FAILURE);
+    }
+    new_op->next = *head;
+    *head = new_op;
+}
 
-            // Figure out the starting point of this iteration. The diagonal
-            // offsets come from the geometry of the edit grid - if you're going
-            // down, your diagonal is lower, and if you're going right, your
-            // diagonal is higher.
-            if(go_down != 0)
-            {
-                old_x = coord[k + 1].x;
-                //history = coord[k + 1];
-                x = old_x;
+// Function to free the operations list
+void free_operations(Operation* head) {
+    while (head) {
+        Operation* temp = head;
+        head = head->next;
+        free(temp->line); // Free the duplicated line
+        free(temp);
+    }
+}
+
+// Function to print the operations list
+void print_operations(Operation* operations) {
+    Operation* current = operations;
+    while (current) {
+        if (current->type == 'M') {
+            printf("Match: %s", current->line);
+        } else if (current->type == 'I') {
+            printf("Insert: %s", current->line);
+        } else if (current->type == 'D') {
+            printf("Delete: %s", current->line);
+        }
+        current = current->next;
+    }
+}
+
+char** read_file_lines(const char* filename, int* line_count) {
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        perror("fopen failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int capacity = 1024;
+    char** lines = malloc(capacity * sizeof(char*)); // Allocate space for up to 1024 lines initially
+    if (!lines) {
+        perror("malloc failed");
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[1024];
+    *line_count = 0;
+
+    while (fgets(buffer, sizeof(buffer), file)) {
+        if (*line_count >= capacity) {
+            capacity *= 2; // Double the capacity
+            lines = realloc(lines, capacity * sizeof(char*));
+            if (!lines) {
+                perror("realloc failed");
+                exit(EXIT_FAILURE);
             }
-            else
-            {
-                old_x = coord[k-1].x;
-                x = old_x + 1;
+        }
+        lines[*line_count] = strdup(buffer); // Duplicate the line
+        if (!lines[*line_count]) {
+            perror("strdup failed");
+            exit(EXIT_FAILURE);
+        }
+        (*line_count)++;
+    }
+
+    fclose(file);
+    return lines;
+}
+
+void free_lines(char** lines, int line_count) {
+    for (int i = 0; i < line_count; i++) {
+        free(lines[i]);
+    }
+    free(lines);
+}
+
+int myer_diff(char** A, int N, char** B, int M, Operation** operations) {
+    int MAX = N + M;
+    int* V = calloc(MAX * 2 + 1, sizeof(int)); // Allocate dynamically to avoid stack overflow
+    if (!V) {
+        perror("calloc failed");
+        exit(EXIT_FAILURE);
+    }
+    memset(V, 0, (MAX * 2 + 1) * sizeof(int));
+    int offset = MAX; // Offset to handle negative indices
+
+    for (int D = 0; D <= MAX; D++) {
+        for (int k = -D; k <= D; k += 2) {
+            int x, y;
+            if ((k == -D) || (k != D && V[offset + k - 1] < V[offset + k + 1])) {
+                // Move down (Insertion)
+                x = V[offset + k + 1];
+                y = x - k;
+                if (y < M) {
+                    add_operation(operations, 'I', B[y]); // Record insertion
+                }
+            } else {
+                // Move right (Deletion)
+                x = V[offset + k - 1] + 1;
+                y = x - k;
+                if (x <= N) {
+                    add_operation(operations, 'D', A[x - 1]); // Record deletion
+                }
             }
 
-                
-
-            // We want to avoid modifying the old history, since some other step
-            // may decide to use it.
-            // history = history[:]
-            y = x - k;
-
-            // We start at the invalid point (0, 0) - we should only start building
-            // up history when we move off of it.
-            
-            if(1 <= y && y <= b_max && go_down)
-            {
-                char* temp_str = "+++";
-                temp_str = realloc(temp_str, sizeof(B) + 3);
-                strcat(temp_str, &B[y]);
-                strcat(final_str, temp_str);
-            }
-            else if (1 <= x && x <= a_max)
-            {
-                char* temp_str = "---";
-                temp_str = realloc(temp_str, sizeof(A) + 3);
-                strcat(temp_str, &A[y]);
-                strcat(final_str, temp_str);
+            // Match lines along the diagonal
+            while (x < N && y < M && strcmp(A[x], B[y]) == 0) {
+                add_operation(operations, 'M', A[x]); // Record match
+                x++;
+                y++;
             }
 
-            // Chew up as many diagonal moves as we can - these correspond to common lines,
-            // and they're considered "free" by the algorithm because we want to maximize
-            // the number of these in the output.
-            while (x < a_max && y < b_max && A[x + 1] == B[y + 1])
-                x += 1;
-                y += 1;
-                
-                strcat(final_str, &A[x]); // TODO SEGFAULT
+            V[offset + k] = x;
 
-            if (x >= a_max && y >= b_max)
-            {
-                // If we're here, then we've traversed through the bottom-left corner,
-                // and are done.
-                return final_str;
+            // If we reach the bottom-right corner, return the result
+            if (x >= N && y >= M) {
+                free(V);
+                return D; // Return the length of the shortest edit script
             }
-            else
-            {
-                coord[k] = coord[x];
-            }     
         }
     }
-    return final_str;
+
+    free(V);
+    return MAX; // Return MAX if no path is found (shouldn't happen)
 }

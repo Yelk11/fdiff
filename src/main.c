@@ -4,33 +4,40 @@
 
 int main(int argc, char* argv[])
 {
-    FILE* fp1;
-    FILE* fp2;
+    int line_count_A, line_count_B;
+    char** A;
+    char** B;
     if(argc >= 2)
     {
-        fp1 = fopen(argv[1], "r");
-        fp2 = fopen(argv[2], "r");
+
+        A = read_file_lines(argv[1], &line_count_A);
+        B = read_file_lines(argv[2], &line_count_B);
     }
     else
     {
-        fp1 = fopen("file1.txt", "r");
-        fp2 = fopen("file2.txt", "r");
+        // Read the input files as lines
+        A = read_file_lines("file1.txt", &line_count_A);
+        B = read_file_lines("file2.txt", &line_count_B);
     }
+
     
 
-    fseek(fp1, 0, SEEK_END);
-    fseek(fp2, 0, SEEK_END);
-    long length1 = ftell(fp1);
-    long length2 = ftell(fp2);
-    rewind(fp1);
-    rewind(fp2);
-    char* buffer1 = calloc(1,sizeof(char) * length1);
-    char* buffer2 = calloc(1,sizeof(char) * length2);
-    if(buffer1){
-        fread (buffer1, 1, length1, fp1);
-    }
-    fread (buffer2, 1, length2, fp2);
-    myer_diff(buffer1, buffer2);
+    
+
+    Operation* operations = NULL; // Initialize the operations list
+
+    // Call the Myers diff algorithm
+    int ses_length = myer_diff(A, line_count_A, B, line_count_B, &operations);
+
+    printf("Length of Shortest Edit Script: %d\n", ses_length);
+    printf("Edit Operations:\n");
+    print_operations(operations); // Print the operations
+
+    // Free allocated memory
+    free_operations(operations);
+    free_lines(A, line_count_A);
+    free_lines(B, line_count_B);
+
     return 0;
 }
 
